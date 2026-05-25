@@ -601,7 +601,9 @@ const MathEngine = (() => {
           Math.abs(node.right.right.value - 2) < EPS
         ) {
           const base = formatAst(node.right.left, 4);
-          den = `${needsParen(node.right.left, 4) ? `(${base})` : base}²`;
+          const wrapBase =
+            node.right.left.type === "var" || node.right.left.type === "num" || node.right.left.type === "call";
+          den = `${wrapBase ? base : needsParen(node.right.left, 4) ? `(${base})` : base}²`;
         } else {
           const r = formatAst(node.right, 3);
           den = needsParen(node.right, 3) ? `(${r})` : r;
