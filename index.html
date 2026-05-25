@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>函数单调性 · 动态图谱</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="header-text">
+        <h1>函数单调性 · 动态图谱</h1>
+        <p>输入系数或方程，拖动图像控制点改参数；对比 f 与 g，查看增减快慢</p>
+      </div>
+    </header>
+
+    <main class="main" id="mainLayout">
+      <aside class="panel controls" id="panelLeft">
+        <section class="section">
+          <h2>函数 f(x)</h2>
+          <select id="funcType" class="select">
+            <option value="linear">一次函数 y = ax + b</option>
+            <option value="quadratic" selected>二次函数 y = ax² + bx + c</option>
+            <option value="cubic">三次函数 y = ax³ + bx² + cx + d</option>
+            <option value="exponential">指数函数 y = a·e^(bx) + c</option>
+            <option value="logarithmic">对数函数 y = a·ln(x) + b</option>
+            <option value="power">幂函数 y = a·x^n</option>
+            <option value="custom">自定义 f(x) = …</option>
+          </select>
+        </section>
+
+        <section class="section" id="coeffSection">
+          <h2>f(x) 系数</h2>
+          <p class="hint coeff-hint">支持整数、小数与分数，如 <code>1/2</code>、<code>-3/4</code>、<code>1 1/2</code></p>
+          <div id="coeffInputs" class="coeff-grid"></div>
+        </section>
+
+        <section class="section hidden" id="customSection">
+          <h2>自定义 f(x)</h2>
+          <label class="field-label" for="customExpr">f(x) =</label>
+          <input id="customExpr" class="text-input" type="text" value="sin(x) + 0.1*x" spellcheck="false" />
+          <div id="toolbarCustomF" class="expr-toolbar" aria-label="符号快捷输入"></div>
+          <p class="hint">支持：+ − × ÷ ^、sin cos tan、ln log sqrt abs、常数 pi e；点击下方按钮插入</p>
+        </section>
+
+        <section class="section compare-section">
+          <label class="toggle">
+            <input id="compareEnabled" type="checkbox" />
+            <span>启用对比函数 g(x)</span>
+          </label>
+          <div id="comparePanel" class="compare-panel hidden">
+            <h2>函数 g(x)</h2>
+            <select id="funcType2" class="select">
+              <option value="linear" selected>一次函数 y = ax + b</option>
+              <option value="quadratic">二次函数 y = ax² + bx + c</option>
+              <option value="cubic">三次函数 y = ax³ + bx² + cx + d</option>
+              <option value="exponential">指数函数 y = a·e^(bx) + c</option>
+              <option value="logarithmic">对数函数 y = a·ln(x) + b</option>
+              <option value="power">幂函数 y = a·x^n</option>
+              <option value="custom">自定义 g(x) = …</option>
+            </select>
+            <div id="coeffSection2" class="compare-sub">
+              <h3>g(x) 系数</h3>
+              <p class="hint coeff-hint">支持分数，可与 f(x) 选不同类型对比</p>
+              <div id="coeffInputs2" class="coeff-grid"></div>
+            </div>
+            <div id="customSection2" class="compare-sub hidden">
+              <h3>自定义 g(x)</h3>
+              <label class="field-label" for="customExpr2">g(x) =</label>
+              <input id="customExpr2" class="text-input" type="text" value="1-1/x" spellcheck="false" />
+              <div id="toolbarCustomG" class="expr-toolbar" aria-label="符号快捷输入"></div>
+              <p class="hint">支持：+ − × ÷ ^、sin cos tan、ln log sqrt abs、常数 pi e；点击下方按钮插入</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section">
+          <h2>视图范围</h2>
+          <div class="range-grid">
+            <label class="field"><span>x 最小</span><input id="xMin" type="number" value="-5" step="1" /></label>
+            <label class="field"><span>x 最大</span><input id="xMax" type="number" value="5" step="1" /></label>
+            <label class="field"><span>y 最小</span><input id="yMin" type="number" value="-10" step="1" /></label>
+            <label class="field"><span>y 最大</span><input id="yMax" type="number" value="10" step="1" /></label>
+          </div>
+        </section>
+
+        <section class="section toggles">
+          <label class="toggle"><input id="showDerivative" type="checkbox" checked /><span>显示导数 f′(x)</span></label>
+          <label class="toggle"><input id="showMonotone" type="checkbox" checked /><span>标注单调区间</span></label>
+          <label class="toggle"><input id="showRate" type="checkbox" checked /><span>显示增减快慢</span></label>
+        </section>
+
+        <section class="section">
+          <p class="hint drag-hint">拖动图像上的<strong>控制点</strong>可改系数；在曲线上拖动可平移；点击图像可查看该点增减快慢</p>
+        </section>
+      </aside>
+
+      <div class="splitter splitter-v" id="splitterLeft" role="separator" aria-orientation="vertical" title="拖动调节左侧宽度"></div>
+
+      <section class="graph-area" id="graphArea">
+        <div class="graph-panel">
+          <div class="graph-header">
+            <h2>函数图像</h2>
+            <div class="graph-actions">
+              <button type="button" id="graphCollapseBtn" class="btn-text" aria-expanded="true">收起</button>
+            </div>
+          </div>
+          <div class="graph-body" id="graphBody">
+            <div class="graph-wrap" id="graphWrap">
+              <canvas id="graph" width="720" height="500" aria-label="函数图像"></canvas>
+              <div class="legend">
+                <span class="legend-item curve">— f(x)</span>
+                <span class="legend-item curve2">— g(x)</span>
+                <span class="legend-item inc">↗ 递增</span>
+                <span class="legend-item dec">↘ 递减</span>
+                <span class="legend-item deriv">- - f′(x) / g′(x)</span>
+                <span class="legend-item probe">● 探针 / 切线</span>
+                <span class="legend-item handle">● 控制点</span>
+              </div>
+            </div>
+            <div class="resize-bar resize-bar-v" id="resizeBarV" role="separator" aria-orientation="horizontal" title="拖动调节图像高度"></div>
+          </div>
+        </div>
+      </section>
+
+      <div class="splitter splitter-v" id="splitterRight" role="separator" aria-orientation="vertical" title="拖动调节右侧宽度"></div>
+
+      <aside class="panel analysis" id="panelRight">
+        <section class="section">
+          <h2>函数 f(x)</h2>
+          <div id="formulaDisplay" class="formula"></div>
+          <div id="derivativeDisplay" class="formula sub-formula"></div>
+        </section>
+        <section class="section hidden" id="compareAnalysis">
+          <h2>函数 g(x)</h2>
+          <div id="formulaDisplay2" class="formula"></div>
+          <div id="derivativeDisplay2" class="formula sub-formula"></div>
+        </section>
+        <section class="section">
+          <h2>单调性 · f(x)</h2>
+          <div id="monotoneDisplay" class="analysis-text"></div>
+        </section>
+        <section class="section hidden" id="compareMonotoneSection">
+          <h2>单调性 · g(x)</h2>
+          <div id="monotoneDisplay2" class="analysis-text"></div>
+        </section>
+        <section class="section">
+          <h2>增减快慢（探针）</h2>
+          <div id="rateDisplay" class="analysis-text"></div>
+        </section>
+        <section class="section hidden" id="compareRateSection">
+          <h2>f 与 g 对比</h2>
+          <div id="compareRateDisplay" class="analysis-text"></div>
+        </section>
+        <section class="section">
+          <h2>关键点</h2>
+          <div id="criticalDisplay" class="analysis-text"></div>
+        </section>
+      </aside>
+    </main>
+  </div>
+
+  <script src="js/math-engine.js"></script>
+  <script src="js/plotter.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
