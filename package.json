@@ -1,0 +1,25 @@
+{
+  "name": "dynamic-function-map",
+  "version": "1.0.0",
+  "description": "基于浏览器的数学函数可视化与分析工具，支持 f(x) / g(x) 对比、符号求导、单调性与增减快慢分析，以及图像上的交互探针与控制点。",
+  "main": "index.js",
+  "scripts": {
+    "vendor": "node scripts/copy-katex.mjs",
+    "build": "node scripts/copy-katex.mjs && node build-standalone.mjs",
+    "test:composite": "node scripts/test-composite.mjs",
+    "test:zhihu": "node scripts/test-zhihu-monotonicity.mjs",
+    "test:domain": "node scripts/test-domain.mjs",
+    "postinstall": "node scripts/copy-katex.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://gitee.com/arvin_123/math-function-map.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "katex": "^0.16.11"
+  }
+}

@@ -35,6 +35,7 @@ const Plotter = (() => {
   }
 
   function niceStep(range) {
+    if (!Number.isFinite(range) || range <= 0) return 1;
     const rough = range / 8;
     const pow = Math.pow(10, Math.floor(Math.log10(rough)));
     const norm = rough / pow;
@@ -44,6 +45,21 @@ const Plotter = (() => {
     else if (norm <= 5) step = 5;
     else step = 10;
     return step * pow;
+  }
+
+  function withPlotClip(ctx, pad, plotW, plotH, fn) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(pad.left, pad.top, plotW, plotH);
+    ctx.clip();
+    fn();
+    ctx.restore();
+  }
+
+  function strokePlotFrame(ctx, pad, plotW, plotH) {
+    ctx.strokeStyle = COLORS.axis;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(pad.left + 0.5, pad.top + 0.5, plotW - 1, plotH - 1);
   }
 
   function draw(ctx, model) {
@@ -61,6 +77,7 @@ const Plotter = (() => {
       intervals,
       intervals2,
       criticalPoints,
+      criticalPoints2,
       showDerivative,
       showMonotone,
       showRate,
@@ -71,6 +88,12 @@ const Plotter = (() => {
       handles,
       activeHandleId,
       compareEnabled,
+      fmtCoord,
+      showCoords,
+      showCriticalPoints = true,
+      highFrequency = false,
+      showProbe = true,
+      showHandles = true,
     } = model;
 
     const plot = createPlotContext(width, height, xMin, xMax, yMin, yMax);
@@ -80,16 +103,18 @@ const Plotter = (() => {
     ctx.fillStyle = COLORS.canvasBg;
     ctx.fillRect(0, 0, width, height);
 
-    const xStep = niceStep(xMax - xMin);
-    const yStep = niceStep(yMax - yMin);
+    const xSpan = xMax - xMin;
+    const ySpan = yMax - yMin;
+    const xStep = niceStep(xSpan);
+    const yStep = niceStep(ySpan);
 
   function drawMonotoneBands(intervalList, rateInfo, prefix) {
-      if (!showMonotone || !intervalList) return;
+      if (!showMonotone || !intervalList || highFrequency) return;
       for (const iv of intervalList) {
         const x1 = Math.max(iv.from, xMin);
         const x2 = Math.min(iv.to, xMax);
         if (x2 <= x1) continue;
-        if (iv.type === "const") continue;
+        if (iv.type === "const" || iv.type === "osc") continue;
 
         let alpha = 0.35;
         if (showRate && rateInfo) {
@@ -108,9 +133,6 @@ const Plotter = (() => {
         ctx.fillRect(px1, pad.top, px2 - px1, plotH);
       }
     }
-
-    drawMonotoneBands(intervals, rateData, "f");
-    if (compareEnabled) drawMonotoneBands(intervals2, rateData2, "g");
 
     // 网格
     ctx.strokeStyle = COLORS.grid;
@@ -145,137 +167,270 @@ const Plotter = (() => {
     ctx.stroke();
 
     // 刻度
+    const EPS0 = 1e-10;
     ctx.fillStyle = COLORS.text;
     ctx.font = "11px Segoe UI, sans-serif";
     ctx.textAlign = "center";
     for (let x = Math.ceil(xMin / xStep) * xStep; x <= xMax; x += xStep) {
-      if (Math.abs(x) < 1e-10) continue;
-      ctx.fillText(formatTick(x), toX(x), pad.top + plotH + 18);
+      if (Math.abs(x) < EPS0) continue;
+      ctx.fillText(formatTick(x, xStep), toX(x), pad.top + plotH + 18);
     }
     ctx.textAlign = "right";
     for (let y = Math.ceil(yMin / yStep) * yStep; y <= yMax; y += yStep) {
-      if (Math.abs(y) < 1e-10) continue;
-      ctx.fillText(formatTick(y), pad.left - 6, toY(y) + 4);
+      if (Math.abs(y) < EPS0) continue;
+      ctx.fillText(formatTick(y, yStep), pad.left - 6, toY(y) + 4);
+    }
+    if (xMin <= 0 && xMax >= 0) {
+      ctx.textAlign = "center";
+      ctx.fillText("0", toX(0), pad.top + plotH + 18);
+    }
+    if (yMin <= 0 && yMax >= 0) {
+      ctx.textAlign = "right";
+      const oy = toY(0);
+      const labelY = xMin <= 0 && xMax >= 0 ? oy - 3 : oy + 4;
+      ctx.fillText("0", pad.left - 6, labelY);
     }
 
-    // 速率条 |f'(x)|
-    if (showRate && rateData) {
-      drawRateBar(ctx, rateData, toX, pad, plotW, plotH, xMin, xMax, COLORS.curve);
-      if (compareEnabled && rateData2) {
-        drawRateBar(ctx, rateData2, toX, pad, plotW, plotH, xMin, xMax, COLORS.curve2, 14);
+    strokePlotFrame(ctx, pad, plotW, plotH);
+
+    withPlotClip(ctx, pad, plotW, plotH, () => {
+      drawMonotoneBands(intervals, rateData, "f");
+      if (compareEnabled) drawMonotoneBands(intervals2, rateData2, "g");
+
+      if (showDerivative && deriv) {
+        drawCurve(ctx, (x) => deriv(x), xMin, xMax, toX, toY, pad, plotW, plotH, COLORS.deriv, 1.5, true);
       }
-    }
+      if (compareEnabled && showDerivative && deriv2) {
+        drawCurve(ctx, (x) => deriv2(x), xMin, xMax, toX, toY, pad, plotW, plotH, COLORS.deriv2, 1.5, true);
+      }
 
-    // 导数
-    if (showDerivative && deriv) {
-      drawCurve(ctx, (x) => deriv(x), xMin, xMax, toX, toY, COLORS.deriv, 1.5, true);
-    }
-    if (compareEnabled && showDerivative && deriv2) {
-      drawCurve(ctx, (x) => deriv2(x), xMin, xMax, toX, toY, COLORS.deriv2, 1.5, true);
-    }
+      if (compareEnabled && f2) {
+        drawCurve(ctx, f2, xMin, xMax, toX, toY, pad, plotW, plotH, COLORS.curve2, 2.5, false);
+      }
+      drawCurve(ctx, f, xMin, xMax, toX, toY, pad, plotW, plotH, COLORS.curve, 2.5, false);
 
-    // 函数曲线
-    if (compareEnabled && f2) {
-      drawCurve(ctx, f2, xMin, xMax, toX, toY, COLORS.curve2, 2.5, false);
-    }
-    drawCurve(ctx, f, xMin, xMax, toX, toY, COLORS.curve, 2.5, false);
-
-    // 极值点
-    if (criticalPoints) {
-      for (const pt of criticalPoints) {
-        if (pt.x < xMin || pt.x > xMax) continue;
-        let py;
-        try {
-          py = toY(pt.y);
-        } catch {
-          continue;
+      if (showCriticalPoints) {
+        drawCriticalMarkers(
+          ctx,
+          criticalPoints,
+          toX,
+          toY,
+          pad,
+          plotW,
+          plotH,
+          COLORS.crit,
+          xMin,
+          xMax,
+          fmtCoord,
+          false,
+          false
+        );
+        if (compareEnabled) {
+          drawCriticalMarkers(
+            ctx,
+            criticalPoints2,
+            toX,
+            toY,
+            pad,
+            plotW,
+            plotH,
+            COLORS.curve2,
+            xMin,
+            xMax,
+            fmtCoord,
+            false,
+            false
+          );
         }
-        if (py < pad.top || py > pad.top + plotH) continue;
-        const px = toX(pt.x);
-        ctx.fillStyle = COLORS.crit;
-        ctx.beginPath();
-        ctx.arc(px, py, 5, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = "#fff";
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
       }
-    }
 
-    // 探针点与切线
-    if (probeX != null && Number.isFinite(probeX) && probeX >= xMin && probeX <= xMax) {
-      let fy, slope;
-      try {
-        fy = f(probeX);
-        slope = deriv(probeX);
-      } catch {
-        fy = null;
-      }
-      if (Number.isFinite(fy)) {
-        const px = toX(probeX);
-        const py = toY(fy);
-        if (Number.isFinite(slope)) {
-          const span = (xMax - xMin) * 0.12;
-          const xA = probeX - span;
-          const xB = probeX + span;
-          const yA = fy - slope * span;
-          const yB = fy + slope * span;
-          ctx.strokeStyle = COLORS.tangent;
-          ctx.lineWidth = 1.5;
-          ctx.setLineDash([4, 3]);
-          ctx.beginPath();
-          ctx.moveTo(toX(xA), toY(yA));
-          ctx.lineTo(toX(xB), toY(yB));
-          ctx.stroke();
-          ctx.setLineDash([]);
-        }
-        ctx.fillStyle = COLORS.probe;
-        ctx.beginPath();
-        ctx.arc(px, py, 6, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = "#fff";
-        ctx.lineWidth = 2;
-        ctx.stroke();
+      if (showProbe && probeX != null && Number.isFinite(probeX) && probeX >= xMin && probeX <= xMax) {
+        const pxLine = toX(probeX);
         ctx.strokeStyle = COLORS.probe;
         ctx.lineWidth = 1;
         ctx.setLineDash([3, 3]);
         ctx.beginPath();
-        ctx.moveTo(px, pad.top);
-        ctx.lineTo(px, pad.top + plotH);
+        ctx.moveTo(pxLine, pad.top);
+        ctx.lineTo(pxLine, pad.top + plotH);
         ctx.stroke();
         ctx.setLineDash([]);
+
+        let fy, slope;
+        try {
+          fy = f(probeX);
+          slope = deriv ? deriv(probeX) : NaN;
+        } catch {
+          fy = null;
+        }
+        if (Number.isFinite(fy)) {
+          const px = toX(probeX);
+          const py = toY(fy);
+          if (Number.isFinite(slope)) {
+            const span = (xMax - xMin) * 0.12;
+            const xA = probeX - span;
+            const xB = probeX + span;
+            const yA = fy - slope * span;
+            const yB = fy + slope * span;
+            ctx.strokeStyle = COLORS.tangent;
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([4, 3]);
+            ctx.beginPath();
+            ctx.moveTo(toX(xA), toY(yA));
+            ctx.lineTo(toX(xB), toY(yB));
+            ctx.stroke();
+            ctx.setLineDash([]);
+          }
+          drawMarker(ctx, px, py, COLORS.probe, 6);
+        }
+
+        if (compareEnabled && f2) {
+          let gy;
+          try {
+            gy = f2(probeX);
+          } catch {
+            gy = null;
+          }
+          if (Number.isFinite(gy)) {
+            drawMarker(ctx, toX(probeX), toY(gy), COLORS.curve2, 6);
+          }
+        }
+      }
+
+      if (showHandles && handles && handles.length) {
+        for (const h of handles) {
+          if (h.x < xMin || h.x > xMax) continue;
+          let hy;
+          try {
+            hy = h.y;
+          } catch {
+            continue;
+          }
+          if (!Number.isFinite(hy)) continue;
+          const px = toX(h.x);
+          const py = toY(hy);
+          const active = h.id === activeHandleId;
+          ctx.fillStyle = active ? COLORS.handleActive : COLORS.handle;
+          ctx.beginPath();
+          ctx.arc(px, py, active ? 8 : 6, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = "#fff";
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          ctx.strokeStyle = active ? COLORS.handleActive : COLORS.handle;
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+      }
+    });
+
+    if (showCoords) {
+      if (showCriticalPoints) {
+        drawCriticalMarkers(
+          ctx,
+          criticalPoints,
+          toX,
+          toY,
+          pad,
+          plotW,
+          plotH,
+          COLORS.crit,
+          xMin,
+          xMax,
+          fmtCoord,
+          true,
+          true
+        );
+        if (compareEnabled) {
+          drawCriticalMarkers(
+            ctx,
+            criticalPoints2,
+            toX,
+            toY,
+            pad,
+            plotW,
+            plotH,
+            COLORS.curve2,
+            xMin,
+            xMax,
+            fmtCoord,
+            true,
+            true
+          );
+        }
+      }
+
+      if (showProbe && probeX != null && Number.isFinite(probeX) && probeX >= xMin && probeX <= xMax) {
+        let fy;
+        try {
+          fy = f(probeX);
+        } catch {
+          fy = null;
+        }
+        if (Number.isFinite(fy)) {
+          drawCoordLabel(
+            ctx,
+            toX(probeX),
+            toY(fy),
+            `f ${coordPair(probeX, fy, fmtCoord)}`,
+            COLORS.probe,
+            pad,
+            plotW,
+            plotH,
+            true
+          );
+        }
+        if (compareEnabled && f2) {
+          let gy;
+          try {
+            gy = f2(probeX);
+          } catch {
+            gy = null;
+          }
+          if (Number.isFinite(gy)) {
+            drawCoordLabel(
+              ctx,
+              toX(probeX),
+              toY(gy),
+              `g ${coordPair(probeX, gy, fmtCoord)}`,
+              COLORS.curve2,
+              pad,
+              plotW,
+              plotH,
+              false
+            );
+          }
+        }
+      }
+
+      if (showHandles && handles && handles.length) {
+        for (const h of handles) {
+          if (h.x < xMin || h.x > xMax) continue;
+          if (!Number.isFinite(h.y)) continue;
+          const px = toX(h.x);
+          const py = toY(h.y);
+          drawCoordLabel(ctx, px, py, coordPair(h.x, h.y, fmtCoord), COLORS.handle, pad, plotW, plotH, false);
+        }
       }
     }
 
-    // 拖拽控制点
-    if (handles && handles.length) {
+    if (showHandles && handles && handles.length) {
       for (const h of handles) {
         if (h.x < xMin || h.x > xMax) continue;
-        let hy;
-        try {
-          hy = h.y;
-        } catch {
-          continue;
-        }
-        if (!Number.isFinite(hy)) continue;
+        if (!Number.isFinite(h.y)) continue;
         const px = toX(h.x);
-        const py = toY(hy);
-        if (py < pad.top - 20 || py > pad.top + plotH + 20) continue;
-        const active = h.id === activeHandleId;
-        ctx.fillStyle = active ? COLORS.handleActive : COLORS.handle;
-        ctx.beginPath();
-        ctx.arc(px, py, active ? 8 : 6, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = "#fff";
-        ctx.lineWidth = 2;
-        ctx.stroke();
-        ctx.strokeStyle = active ? COLORS.handleActive : COLORS.handle;
-        ctx.lineWidth = 1;
-        ctx.stroke();
+        const py = toY(h.y);
+        if (py < pad.top || py > pad.top + plotH) continue;
         ctx.fillStyle = COLORS.text;
         ctx.font = "10px Segoe UI, sans-serif";
         ctx.textAlign = "center";
         ctx.fillText(h.label, px, py - 12);
+      }
+    }
+
+    if (showRate && rateData) {
+      drawRateBar(ctx, rateData, toX, pad, plotW, plotH, xMin, xMax, COLORS.curve);
+      if (compareEnabled && rateData2) {
+        drawRateBar(ctx, rateData2, toX, pad, plotW, plotH, xMin, xMax, COLORS.curve2, 14);
       }
     }
 
@@ -304,9 +459,45 @@ const Plotter = (() => {
     ctx.fillText("|f′| 快慢", pad.left, y0 + barH + 10);
   }
 
-  function drawCurve(ctx, fn, xMin, xMax, toX, toY, color, lineWidth, dashed) {
-    const samples = 1200;
-    const dx = (xMax - xMin) / samples;
+  function curveSampleCount(plotW, xMin, xMax, fn) {
+    let base = Math.max(800, Math.min(12000, Math.ceil(plotW * 2.5)));
+    const xSpan = xMax - xMin;
+    if (fn && xSpan > 0) {
+      const probe = Math.min(400, Math.max(80, Math.ceil(plotW)));
+      let turns = 0;
+      let prev = null;
+      let prev2 = null;
+      for (let i = 0; i <= probe; i++) {
+        const x = xMin + (i / probe) * xSpan;
+        let y;
+        try {
+          y = fn(x);
+        } catch {
+          prev = null;
+          prev2 = null;
+          continue;
+        }
+        if (!Number.isFinite(y)) {
+          prev = null;
+          prev2 = null;
+          continue;
+        }
+        if (prev !== null && prev2 !== null && (y - prev) * (prev - prev2) < 0) turns++;
+        prev2 = prev;
+        prev = y;
+      }
+      if (turns > 12) base = Math.min(24000, Math.max(base, Math.ceil(plotW * 6)));
+    }
+    return base;
+  }
+
+  function drawCurve(ctx, fn, xMin, xMax, toX, toY, pad, plotW, plotH, color, lineWidth, dashed) {
+    const xSpan = xMax - xMin;
+    const samples = curveSampleCount(plotW, xMin, xMax, fn);
+    const dx = xSpan / samples;
+    const yMarginPx = Math.max(32, plotH * 0.2);
+    const yTop = pad.top - yMarginPx;
+    const yBottom = pad.top + plotH + yMarginPx;
     ctx.strokeStyle = color;
     ctx.lineWidth = lineWidth;
     if (dashed) ctx.setLineDash([6, 4]);
@@ -329,6 +520,10 @@ const Plotter = (() => {
       }
       const px = toX(x);
       const py = toY(y);
+      if (py < yTop || py > yBottom) {
+        started = false;
+        continue;
+      }
       if (!started) {
         ctx.moveTo(px, py);
         started = true;
@@ -340,16 +535,143 @@ const Plotter = (() => {
     ctx.setLineDash([]);
   }
 
-  function formatTick(v) {
-    if (Math.abs(v) >= 1000 || (Math.abs(v) < 0.01 && v !== 0)) return v.toExponential(1);
-    const r = Math.round(v * 100) / 100;
+  function formatTick(v, step) {
+    if (!Number.isFinite(v)) return "—";
+    if (v === 0) return "0";
+    const abs = Math.abs(v);
+    if (abs >= 1e8 || (abs > 0 && abs < 1e-5)) return v.toPrecision(4);
+    if (step && step > 0 && Number.isFinite(step)) {
+      const decimals = Math.max(0, Math.min(12, -Math.floor(Math.log10(step)) + 1));
+      const f = 10 ** decimals;
+      const r = Math.round(v * f) / f;
+      return Number.isInteger(r) ? String(r) : String(r);
+    }
+    if (abs >= 1000) return v.toExponential(2);
+    const r = Math.round(v * 1000) / 1000;
     return Number.isInteger(r) ? String(r) : String(r);
+  }
+
+  function clamp(v, lo, hi) {
+    return Math.max(lo, Math.min(hi, v));
+  }
+
+  function coordPair(x, y, fmtCoord) {
+    const fx = fmtCoord ? fmtCoord(x) : formatTick(x);
+    const fy = fmtCoord ? fmtCoord(y) : formatTick(y);
+    return `(${fx}, ${fy})`;
+  }
+
+  function drawCoordLabel(ctx, cx, cy, text, color, pad, plotW, plotH, preferAbove = true) {
+    ctx.font = "11px Segoe UI, sans-serif";
+    const w = ctx.measureText(text).width + 10;
+    const h = 18;
+    let lx = cx + 10;
+    let ly = preferAbove ? cy - h - 10 : cy + 14;
+    lx = clamp(lx, pad.left + 2, pad.left + plotW - w - 2);
+    ly = clamp(ly, pad.top + 2, pad.top + plotH - h - 2);
+
+    ctx.fillStyle = "rgba(255, 255, 255, 0.94)";
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    const r = 4;
+    ctx.moveTo(lx + r, ly);
+    ctx.lineTo(lx + w - r, ly);
+    ctx.quadraticCurveTo(lx + w, ly, lx + w, ly + r);
+    ctx.lineTo(lx + w, ly + h - r);
+    ctx.quadraticCurveTo(lx + w, ly + h, lx + w - r, ly + h);
+    ctx.lineTo(lx + r, ly + h);
+    ctx.quadraticCurveTo(lx, ly + h, lx, ly + h - r);
+    ctx.lineTo(lx, ly + r);
+    ctx.quadraticCurveTo(lx, ly, lx + r, ly);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = color;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, lx + 5, ly + h / 2);
+  }
+
+  function drawMarker(ctx, cx, cy, color, radius = 5) {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+
+  function thinCriticalPoints(points, toX, xMin, xMax, minGapPx = 52, maxCount = 22) {
+    if (!points?.length) return [];
+    const vis = points
+      .filter((p) => p.x >= xMin && p.x <= xMax && Number.isFinite(p.y))
+      .sort((a, b) => a.x - b.x);
+    if (vis.length <= maxCount) {
+      const sparse = [];
+      let lastPx = -Infinity;
+      for (const pt of vis) {
+        const px = toX(pt.x);
+        if (px - lastPx >= minGapPx || sparse.length === 0) {
+          sparse.push(pt);
+          lastPx = px;
+        }
+      }
+      return sparse;
+    }
+    const out = [];
+    const step = vis.length / maxCount;
+    let lastPx = -Infinity;
+    for (let i = 0; i < maxCount; i++) {
+      const pt = vis[Math.min(vis.length - 1, Math.round(i * step + step / 2 - 0.5))];
+      const px = toX(pt.x);
+      if (px - lastPx >= minGapPx * 0.6 || out.length === 0) {
+        out.push(pt);
+        lastPx = px;
+      }
+    }
+    return out;
+  }
+
+  function drawCriticalMarkers(
+    ctx,
+    points,
+    toX,
+    toY,
+    pad,
+    plotW,
+    plotH,
+    color,
+    xMin,
+    xMax,
+    fmtCoord,
+    showCoords,
+    labelsOnly = false
+  ) {
+    if (!points?.length) return;
+    const drawn = thinCriticalPoints(points, toX, xMin, xMax, showCoords ? 56 : 36, showCoords ? 18 : 28);
+    drawn.forEach((pt, i) => {
+      if (!Number.isFinite(pt.y)) return;
+      const px = toX(pt.x);
+      const py = toY(pt.y);
+      if (!labelsOnly) {
+        if (py < pad.top || py > pad.top + plotH) return;
+        drawMarker(ctx, px, py, color, 5);
+      }
+      if (showCoords && labelsOnly) {
+        const label = `${pt.kind} ${coordPair(pt.x, pt.y, fmtCoord)}`;
+        drawCoordLabel(ctx, px, py, label, color, pad, plotW, plotH, i % 2 === 0);
+      }
+    });
   }
 
   function nearestOnCurve(f, plot, px, py, xMin, xMax) {
     const x = plot.fromX(px);
     let best = { dist: Infinity, x, y: 0 };
-    const span = (xMax - xMin) / 200;
+    const steps = Math.max(200, Math.ceil(plot.plotW * 1.5));
+    const span = (xMax - xMin) / steps;
     for (let i = -20; i <= 20; i++) {
       const xi = x + i * span;
       if (xi < xMin || xi > xMax) continue;

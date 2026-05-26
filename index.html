@@ -2,21 +2,37 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>函数单调性 · 动态图谱</title>
   <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="vendor/katex/katex.min.css" />
 </head>
 <body>
   <div class="app">
-    <header class="header">
-      <div class="header-text">
-        <h1>函数单调性 · 动态图谱</h1>
-        <p>输入系数或方程，拖动图像控制点改参数；对比 f 与 g，查看增减快慢</p>
-      </div>
+    <header class="app-header">
+      <h1 class="header-title">函数单调性 · 动态图谱</h1>
+      <span class="header-sep" aria-hidden="true">·</span>
+      <p class="header-desc">
+        输入系数或方程，拖动控制点改参数；对比 f 与 g；图像支持滚轮缩放、拖拽平移
+      </p>
     </header>
 
     <main class="main" id="mainLayout">
-      <aside class="panel controls" id="panelLeft">
+      <aside class="panel controls side-panel" id="panelLeft" data-side="left">
+        <div class="panel-head">
+          <h2 class="panel-title">参数设置</h2>
+          <button
+            type="button"
+            class="panel-collapse-btn"
+            id="collapseLeftBtn"
+            aria-expanded="true"
+            aria-controls="panelLeftBody"
+            title="收起左侧参数栏"
+          >
+            收起
+          </button>
+        </div>
+        <div class="panel-body" id="panelLeftBody">
         <section class="section">
           <h2>函数 f(x)</h2>
           <select id="funcType" class="select">
@@ -41,7 +57,33 @@
           <label class="field-label" for="customExpr">f(x) =</label>
           <input id="customExpr" class="text-input" type="text" value="sin(x) + 0.1*x" spellcheck="false" />
           <div id="toolbarCustomF" class="expr-toolbar" aria-label="符号快捷输入"></div>
-          <p class="hint">支持：+ − × ÷ ^、sin cos tan、ln log sqrt abs、常数 pi e；点击下方按钮插入</p>
+          <p class="hint">支持：+ − × ÷ ^、sin cos tan ln log sqrt abs exp、常数 pi e；可写隐式乘法如 <code>2x</code>、<code>2sin(x)</code>、<code>x(x-1)</code></p>
+          <div class="composite-examples">
+            <h3 class="composite-examples-title">例题</h3>
+            <p class="hint">知乎「复合函数单调性」与常见题型，点击填入 f(x)</p>
+            <div id="compositeExamplesF" class="example-chips" role="list"></div>
+          </div>
+        </section>
+
+        <section class="section" id="domainSectionF">
+          <h2>f(x) 定义域</h2>
+          <label class="toggle">
+            <input id="domainLimitF" type="checkbox" />
+            <span>限制定义域</span>
+          </label>
+          <div id="domainPanelF" class="domain-panel hidden">
+            <div class="range-grid">
+              <label class="field">
+                <span>左端点</span>
+                <input id="domainMinF" class="text-input" type="text" value="-∞" spellcheck="false" autocomplete="off" />
+              </label>
+              <label class="field">
+                <span>右端点</span>
+                <input id="domainMaxF" class="text-input" type="text" value="+∞" spellcheck="false" autocomplete="off" />
+              </label>
+            </div>
+            <p class="hint">支持数字与 <code>−∞</code>、<code>+∞</code>（或 -inf、+inf、无穷）</p>
+          </div>
         </section>
 
         <section class="section compare-section">
@@ -70,7 +112,31 @@
               <label class="field-label" for="customExpr2">g(x) =</label>
               <input id="customExpr2" class="text-input" type="text" value="1-1/x" spellcheck="false" />
               <div id="toolbarCustomG" class="expr-toolbar" aria-label="符号快捷输入"></div>
-              <p class="hint">支持：+ − × ÷ ^、sin cos tan、ln log sqrt abs、常数 pi e；点击下方按钮插入</p>
+              <p class="hint">支持：+ − × ÷ ^、sin cos tan ln log sqrt abs exp、常数 pi e；可写隐式乘法</p>
+              <div class="composite-examples">
+                <h3 class="composite-examples-title">例题</h3>
+                <div id="compositeExamplesG" class="example-chips" role="list"></div>
+              </div>
+            </div>
+            <div id="domainSectionG" class="compare-sub">
+              <h3>g(x) 定义域</h3>
+              <label class="toggle">
+                <input id="domainLimitG" type="checkbox" />
+                <span>限制定义域</span>
+              </label>
+              <div id="domainPanelG" class="domain-panel hidden">
+                <div class="range-grid">
+                  <label class="field">
+                    <span>左端点</span>
+                    <input id="domainMinG" class="text-input" type="text" value="-∞" spellcheck="false" autocomplete="off" />
+                  </label>
+                  <label class="field">
+                    <span>右端点</span>
+                    <input id="domainMaxG" class="text-input" type="text" value="+∞" spellcheck="false" autocomplete="off" />
+                  </label>
+                </div>
+                <p class="hint">支持数字与 <code>−∞</code>、<code>+∞</code></p>
+              </div>
             </div>
           </div>
         </section>
@@ -78,22 +144,27 @@
         <section class="section">
           <h2>视图范围</h2>
           <div class="range-grid">
-            <label class="field"><span>x 最小</span><input id="xMin" type="number" value="-5" step="1" /></label>
-            <label class="field"><span>x 最大</span><input id="xMax" type="number" value="5" step="1" /></label>
-            <label class="field"><span>y 最小</span><input id="yMin" type="number" value="-10" step="1" /></label>
-            <label class="field"><span>y 最大</span><input id="yMax" type="number" value="10" step="1" /></label>
+            <label class="field"><span>x 最小</span><input id="xMin" type="number" value="-5" step="any" /></label>
+            <label class="field"><span>x 最大</span><input id="xMax" type="number" value="5" step="any" /></label>
+            <label class="field"><span>y 最小</span><input id="yMin" type="number" value="-10" step="any" /></label>
+            <label class="field"><span>y 最大</span><input id="yMax" type="number" value="10" step="any" /></label>
           </div>
         </section>
 
         <section class="section toggles">
+          <h2 class="toggles-title">图像显示</h2>
           <label class="toggle"><input id="showDerivative" type="checkbox" checked /><span>显示导数 f′(x)</span></label>
           <label class="toggle"><input id="showMonotone" type="checkbox" checked /><span>标注单调区间</span></label>
           <label class="toggle"><input id="showRate" type="checkbox" checked /><span>显示增减快慢</span></label>
+          <label class="toggle"><input id="showCriticalPoints" type="checkbox" checked /><span>显示关键点（极值 / 驻点）</span></label>
+          <label class="toggle"><input id="showProbe" type="checkbox" checked /><span>显示探针与切线</span></label>
+          <label class="toggle"><input id="showHandles" type="checkbox" checked /><span>显示控制点</span></label>
         </section>
 
         <section class="section">
-          <p class="hint drag-hint">拖动图像上的<strong>控制点</strong>可改系数；在曲线上拖动可平移；点击图像可查看该点增减快慢</p>
+          <p class="hint drag-hint">图像上<strong>滚轮</strong>缩放（窄屏或页面可上下滚动时按住 <strong>Ctrl</strong>）；<strong>拖拽</strong>平移；<strong>回到原点</strong>恢复视图；拖<strong>控制点</strong>改系数；<strong>单击</strong>取点</p>
         </section>
+        </div>
       </aside>
 
       <div class="splitter splitter-v" id="splitterLeft" role="separator" aria-orientation="vertical" title="拖动调节左侧宽度"></div>
@@ -103,12 +174,24 @@
           <div class="graph-header">
             <h2>函数图像</h2>
             <div class="graph-actions">
+              <button
+                type="button"
+                id="showCoordsBtn"
+                class="btn-text"
+                aria-pressed="true"
+                title="显示或隐藏图像上的坐标标注"
+              >
+                <span id="showCoordsBtnText">坐标标注：开</span>
+              </button>
+              <button type="button" id="resetViewBtn" class="btn-text" title="恢复默认视图范围并居中显示坐标原点">
+                回到原点
+              </button>
               <button type="button" id="graphCollapseBtn" class="btn-text" aria-expanded="true">收起</button>
             </div>
           </div>
           <div class="graph-body" id="graphBody">
             <div class="graph-wrap" id="graphWrap">
-              <canvas id="graph" width="720" height="500" aria-label="函数图像"></canvas>
+              <canvas id="graph" width="720" height="500" aria-label="函数图像" title="滚轮缩放（窄屏或页面可滚动时按住 Ctrl）；拖拽平移；单击取点"></canvas>
               <div class="legend">
                 <span class="legend-item curve">— f(x)</span>
                 <span class="legend-item curve2">— g(x)</span>
@@ -119,23 +202,39 @@
                 <span class="legend-item handle">● 控制点</span>
               </div>
             </div>
-            <div class="resize-bar resize-bar-v" id="resizeBarV" role="separator" aria-orientation="horizontal" title="拖动调节图像高度"></div>
+            <div class="resize-bar resize-bar-v" id="resizeBarV" role="separator" aria-orientation="horizontal" title="拖动调节图像高度（可超出屏幕，页面可滚动查看）"></div>
           </div>
         </div>
       </section>
 
       <div class="splitter splitter-v" id="splitterRight" role="separator" aria-orientation="vertical" title="拖动调节右侧宽度"></div>
 
-      <aside class="panel analysis" id="panelRight">
+      <aside class="panel analysis side-panel" id="panelRight" data-side="right">
+        <div class="panel-head">
+          <button
+            type="button"
+            class="panel-collapse-btn"
+            id="collapseRightBtn"
+            aria-expanded="true"
+            aria-controls="panelRightBody"
+            title="收起右侧分析栏"
+          >
+            收起
+          </button>
+          <h2 class="panel-title">分析结果</h2>
+        </div>
+        <div class="panel-body" id="panelRightBody">
         <section class="section">
           <h2>函数 f(x)</h2>
           <div id="formulaDisplay" class="formula"></div>
-          <div id="derivativeDisplay" class="formula sub-formula"></div>
+          <div id="domainDisplay" class="formula sub-formula domain-formula"></div>
+          <div id="derivativeDisplay" class="formula sub-formula derivative-display"></div>
         </section>
         <section class="section hidden" id="compareAnalysis">
           <h2>函数 g(x)</h2>
           <div id="formulaDisplay2" class="formula"></div>
-          <div id="derivativeDisplay2" class="formula sub-formula"></div>
+          <div id="domainDisplay2" class="formula sub-formula domain-formula"></div>
+          <div id="derivativeDisplay2" class="formula sub-formula derivative-display"></div>
         </section>
         <section class="section">
           <h2>单调性 · f(x)</h2>
@@ -157,10 +256,12 @@
           <h2>关键点</h2>
           <div id="criticalDisplay" class="analysis-text"></div>
         </section>
+        </div>
       </aside>
     </main>
   </div>
 
+  <script src="vendor/katex/katex.min.js"></script>
   <script src="js/math-engine.js"></script>
   <script src="js/plotter.js"></script>
   <script src="js/app.js"></script>
